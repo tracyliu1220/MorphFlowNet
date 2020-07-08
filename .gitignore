@@ -1,5 +1,8 @@
 __pycache__
 
 checkpoint/*
-
 !.gitkeep
+
+build/
+dist/
+*.egg-info/
