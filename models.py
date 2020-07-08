@@ -102,6 +102,6 @@ class FlowNet2(nn.Module):
 
 if __name__ == '__main__':
     model = FlowNet2()
-    model.load_state_dict(torch.load('checkpoint/FlowNet2_checkpoint.pth.tar')['state_dict'])
-    print (model)
-
+    weights = torch.load('checkpoint/FlowNet2_checkpoint.pth.tar')['state_dict']
+    model.load_state_dict(weights)
+    print (weights)
