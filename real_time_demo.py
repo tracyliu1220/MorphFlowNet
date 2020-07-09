@@ -1,5 +1,6 @@
 import torch
 from PIL import Image
+import time
 
 import numpy as np
 import cv2 as cv
@@ -8,9 +9,12 @@ from torchvision import transforms
 from models import FlowNet2
 from utils import flow_utils
 
-model = FlowNet2().cuda()
+model = FlowNet2()
+model.morphize()
 model.load_state_dict(torch.load('checkpoint/FlowNet2_checkpoint.pth.tar')['state_dict'])
+model.demorphize()
 model.eval()
+model.cuda()
 
 def padding(image):
     _, w, h = image.size()
@@ -29,6 +33,7 @@ while cap.isOpened():
     if not ret:
         print("Can't receive frame (stream end?). Exiting ...")
         break
+    start = time.time()
     curr_image = padding(transforms.Compose([transforms.ToPILImage(), transforms.Resize((120, 160)), transforms.ToTensor()])(frame)).unsqueeze(1).unsqueeze(0)
     if prev_image == None:
         prev_image = curr_image
@@ -37,6 +42,8 @@ while cap.isOpened():
         output = model(inputs).cpu().numpy()
     result = flow_utils.flow2img(output[0].transpose(1, 2, 0))
     prev_image = curr_image
+    end = time.time()
+    print (1 / (end - start))
 
     # write the flipped frame
     cv.imshow('result', result)

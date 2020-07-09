@@ -11,6 +11,9 @@ from networks.submodules import *
 from networks.resample2d_package.resample2d import Resample2d
 from networks.channelnorm_package.channelnorm import ChannelNorm
 
+def hook_fn_forward(module, inupt, output):
+    return output * module.gate
+
 class FlowNet2(nn.Module):
 
     def __init__(self, rgb_max=1, batchNorm=False, div_flow = 20.):
@@ -43,6 +46,41 @@ class FlowNet2(nn.Module):
 
         # Block (FLowNetFusion)
         self.flownetfusion = FlowNetFusion.FlowNetFusion(batchNorm=self.batchNorm)
+
+    def morphize(self):
+        for name, module in self.named_modules():
+            if isinstance(module, nn.Conv2d) or isinstance(module, nn.ConvTranspose2d):
+                module.gate = nn.Parameter(torch.ones((1, module.out_channels, 1, 1)).cuda())
+                module.handler = module.register_forward_hook(hook_fn_forward)
+
+    def demorphize(self):
+        tot, cnt = 0, 0
+        for name, module in self.named_modules():
+            if isinstance(module, nn.Conv2d):
+                module.handler.remove()
+                print (name, module.gate.data.sum().item(), module.gate.data[module.gate.data > 0.01].reshape(-1).size(0), module.gate.data.reshape(-1).size(0))
+                tot += module.gate.data.reshape(-1).size(0)
+                cnt += module.gate.data[module.gate.data > 0.01].reshape(-1).size(0)
+                weight = module.gate.data.reshape(-1, 1, 1, 1).cpu()
+                weight[weight < 0.01] = 0
+                module.weight = nn.Parameter(module.weight * weight)
+                if module.bias is not None:
+                    weight = module.gate.data.reshape(-1).cpu()
+                    module.bias = nn.Parameter(module.bias * weight)
+                del module.gate
+            if isinstance(module, nn.ConvTranspose2d):
+                module.handler.remove()
+                print (name, module.gate.data.sum().item(), module.gate.data[module.gate.data > 0.01].reshape(-1).size(0), module.gate.data.reshape(-1).size(0))
+                tot += module.gate.data.reshape(-1).size(0)
+                cnt += module.gate.data[module.gate.data > 0.01].reshape(-1).size(0)
+                weight = module.gate.data.reshape(1, -1, 1, 1).cpu()
+                weight[weight < 0.01] = 0
+                module.weight = nn.Parameter(module.weight * weight)
+                if module.bias is not None:
+                    weight = module.gate.data.reshape(-1).cpu()
+                    module.bias = nn.Parameter(module.bias * weight)
+                del module.gate
+        print (cnt, tot)
 
     def forward(self, inputs):
         rgb_mean = inputs.contiguous().view(inputs.size()[:2]+(-1,)).mean(dim=-1).view(inputs.size()[:2] + (1,1,1,))
@@ -104,4 +142,4 @@ if __name__ == '__main__':
     model = FlowNet2()
     weights = torch.load('checkpoint/FlowNet2_checkpoint.pth.tar')['state_dict']
     model.load_state_dict(weights)
-    print (weights)
+    print (model)
