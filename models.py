@@ -11,7 +11,7 @@ from networks.submodules import *
 from networks.resample2d_package.resample2d import Resample2d
 from networks.channelnorm_package.channelnorm import ChannelNorm
 
-def hook_fn_forward(module, inupt, output):
+def morphize_forward_hook(module, input, output):
     return output * module.gate
 
 class FlowNet2(nn.Module):
@@ -50,37 +50,30 @@ class FlowNet2(nn.Module):
     def morphize(self):
         for name, module in self.named_modules():
             if isinstance(module, nn.Conv2d) or isinstance(module, nn.ConvTranspose2d):
-                module.gate = nn.Parameter(torch.ones((1, module.out_channels, 1, 1)).cuda())
-                module.handler = module.register_forward_hook(hook_fn_forward)
+                module.name = name
+                module.gate = nn.Parameter(torch.ones((1, module.out_channels, 1, 1)))
+                module.handler = module.register_forward_hook(morphize_forward_hook)
 
     def demorphize(self):
         tot, cnt = 0, 0
         for name, module in self.named_modules():
+            if not isinstance(module, nn.Conv2d) and not isinstance(module, nn.ConvTranspose2d):
+                continue
+            module.handler.remove()
+            weight = module.gate.data.reshape(-1)
+            print (name, weight[weight < 0.01].size(0))
+            tot += weight.size(0)
+            cnt += weight[weight < 0.01].size(0)
+            weight[weight < 0.01] = 0
             if isinstance(module, nn.Conv2d):
-                module.handler.remove()
-                print (name, module.gate.data.sum().item(), module.gate.data[module.gate.data > 0.01].reshape(-1).size(0), module.gate.data.reshape(-1).size(0))
-                tot += module.gate.data.reshape(-1).size(0)
-                cnt += module.gate.data[module.gate.data > 0.01].reshape(-1).size(0)
-                weight = module.gate.data.reshape(-1, 1, 1, 1).cpu()
-                weight[weight < 0.01] = 0
-                module.weight = nn.Parameter(module.weight * weight)
-                if module.bias is not None:
-                    weight = module.gate.data.reshape(-1).cpu()
-                    module.bias = nn.Parameter(module.bias * weight)
-                del module.gate
+                weight = weight.reshape(-1, 1, 1, 1)
             if isinstance(module, nn.ConvTranspose2d):
-                module.handler.remove()
-                print (name, module.gate.data.sum().item(), module.gate.data[module.gate.data > 0.01].reshape(-1).size(0), module.gate.data.reshape(-1).size(0))
-                tot += module.gate.data.reshape(-1).size(0)
-                cnt += module.gate.data[module.gate.data > 0.01].reshape(-1).size(0)
-                weight = module.gate.data.reshape(1, -1, 1, 1).cpu()
-                weight[weight < 0.01] = 0
-                module.weight = nn.Parameter(module.weight * weight)
-                if module.bias is not None:
-                    weight = module.gate.data.reshape(-1).cpu()
-                    module.bias = nn.Parameter(module.bias * weight)
-                del module.gate
-        print (cnt, tot)
+                weight = weight.reshape(1, -1, 1, 1)
+            module.weight = nn.Parameter(module.weight * weight)
+            if module.bias is not None:
+                weight = weight.reshape(-1)
+                module.bias = nn.Parameter(module.bias * weight)
+        print (cnt, '/', tot)
 
     def forward(self, inputs):
         rgb_mean = inputs.contiguous().view(inputs.size()[:2]+(-1,)).mean(dim=-1).view(inputs.size()[:2] + (1,1,1,))

@@ -9,9 +9,12 @@ from torchvision import transforms
 from models import FlowNet2
 from utils import flow_utils
 
-model = FlowNet2()
+model = FlowNet2().cpu()
 model.morphize()
-model.load_state_dict(torch.load('checkpoint/FlowNet2_checkpoint.pth.tar')['state_dict'])
+#model.load_state_dict(torch.load('checkpoint/FlowNet2_checkpoint.pth.tar')['state_dict'])
+#model.load_state_dict(torch.load('checkpoint/checkpoint3.pth.tar')['state_dict'])
+#model.load_state_dict(torch.load('checkpoint/checkpoint8.pth.tar')['state_dict'])
+model.load_state_dict(torch.load('checkpoint/checkpoint9.pth.tar')['state_dict'])
 model.demorphize()
 model.eval()
 model.cuda()
@@ -33,21 +36,21 @@ while cap.isOpened():
     if not ret:
         print("Can't receive frame (stream end?). Exiting ...")
         break
-    start = time.time()
     curr_image = padding(transforms.Compose([transforms.ToPILImage(), transforms.Resize((120, 160)), transforms.ToTensor()])(frame)).unsqueeze(1).unsqueeze(0)
     if prev_image == None:
         prev_image = curr_image
     inputs = torch.cat([prev_image, curr_image], dim=2).cuda()
+    start = time.time()
     with torch.no_grad():
         output = model(inputs).cpu().numpy()
+    end = time.time()
     result = flow_utils.flow2img(output[0].transpose(1, 2, 0))
     prev_image = curr_image
-    end = time.time()
-    print (1 / (end - start))
+#    print (1 / (end - start))
 
     # write the flipped frame
-    cv.imshow('result', result)
     cv.imshow('origin', frame)
+    cv.imshow('result', result)
     if cv.waitKey(1) == ord('q'):
         break
 # Release everything if job is finished
